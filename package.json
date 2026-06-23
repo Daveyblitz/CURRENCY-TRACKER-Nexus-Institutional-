@@ -5,6 +5,9 @@
   "description": "Root workspace configuration for Currency Tracker app",
   "scripts": {
     "install-all": "npm install && npm install --prefix server && npm install --prefix client",
+    "build": "npm run build --prefix client",
+    "preview": "npm run preview --prefix client",
+    "start": "npm run start --prefix server",
     "server": "npm run start --prefix server",
     "client": "npm run dev --prefix client",
     "dev": "npx concurrently \"npm run server\" \"npm run client\""
