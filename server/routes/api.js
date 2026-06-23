@@ -96,7 +96,7 @@ function publicUserRow(row) {
 }
 
 // ----------------------------------------------------
-// 0. AUTH ENDPOINTS (PostgreSQL)
+// 0. AUTH ENDPOINTS (SQLite)
 // ----------------------------------------------------
 
 router.post('/auth/register', (req, res) => {
@@ -115,7 +115,7 @@ router.post('/auth/register', (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
 
-  db.get('SELECT email FROM users WHERE email = $1', [normalizedEmail], (lookupErr, existing) => {
+  db.get('SELECT email FROM users WHERE email = ?', [normalizedEmail], (lookupErr, existing) => {
     if (lookupErr) {
       console.error('Registration lookup error:', lookupErr.message);
       return res.status(500).json({ error: 'Failed to check existing user' });
@@ -129,7 +129,7 @@ router.post('/auth/register', (req, res) => {
 
     db.run(
       `INSERT INTO users (email, name, country_code, password_salt, password_hash, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [normalizedEmail, trimmedName, normalizedCountry, salt, hash],
       function (insertErr) {
         if (insertErr) {
@@ -137,7 +137,7 @@ router.post('/auth/register', (req, res) => {
           return res.status(500).json({ error: 'Failed to create account' });
         }
 
-        db.get('SELECT email, name, country_code, created_at, updated_at FROM users WHERE email = $1', [normalizedEmail], (userErr, row) => {
+        db.get('SELECT email, name, country_code, created_at, updated_at FROM users WHERE email = ?', [normalizedEmail], (userErr, row) => {
           if (userErr) {
             return res.status(500).json({ error: 'Account created, but failed to load profile' });
           }
@@ -159,7 +159,7 @@ router.post('/auth/login', (req, res) => {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
-  db.get('SELECT * FROM users WHERE email = $1', [normalizedEmail], (err, row) => {
+  db.get('SELECT * FROM users WHERE email = ?', [normalizedEmail], (err, row) => {
     if (err) {
       console.error('Login lookup error:', err.message);
       return res.status(500).json({ error: 'Failed to sign in' });
@@ -191,7 +191,7 @@ router.get('/auth/user/:email', (req, res) => {
     return res.status(400).json({ error: 'Email is required' });
   }
 
-  db.get('SELECT email, name, country_code, created_at, updated_at FROM users WHERE email = $1', [email], (err, row) => {
+  db.get('SELECT email, name, country_code, created_at, updated_at FROM users WHERE email = ?', [email], (err, row) => {
     if (err) {
       console.error('Profile lookup error:', err.message);
       return res.status(500).json({ error: 'Failed to fetch user profile' });
@@ -206,7 +206,7 @@ router.get('/auth/user/:email', (req, res) => {
 });
 
 // ----------------------------------------------------
-// 1. USER SETTINGS ENDPOINTS (PostgreSQL)
+// 1. USER SETTINGS ENDPOINTS (SQLite)
 // ----------------------------------------------------
 
 router.get('/user/settings', (req, res) => {
@@ -226,7 +226,7 @@ router.post('/user/settings', (req, res) => {
 
   db.run(
     `UPDATE user_settings 
-     SET username = $1, country_code = $2, base_currency = $3, theme = $4, bitnob_api_key = $5, updated_at = NOW() 
+     SET username = ?, country_code = ?, base_currency = ?, theme = ?, bitnob_api_key = ?, updated_at = CURRENT_TIMESTAMP 
      WHERE id = 1`,
     [
       username || 'Guest Developer', 
