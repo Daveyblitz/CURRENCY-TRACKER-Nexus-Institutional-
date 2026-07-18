@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import Topbar from './components/Topbar'
 import Dashboard from './components/Dashboard'
 import Exchange from './components/Exchange'
+import { apiUrl } from './config'
 import './index.css'
 
 function ComingSoon({ title }) {
@@ -31,12 +32,12 @@ export default function App() {
     const loadBootData = async () => {
       try {
         const storedEmail = localStorage.getItem('nexus.authEmail')
-        const countriesRes = await fetch('/api/countries')
+        const countriesRes = await fetch(apiUrl('/api/countries'))
         const countriesJson = await countriesRes.json()
         setCountries(Array.isArray(countriesJson) ? countriesJson : [])
 
         if (storedEmail) {
-          const userRes = await fetch(`/api/auth/user/${encodeURIComponent(storedEmail)}`)
+          const userRes = await fetch(apiUrl(`/api/auth/user/${encodeURIComponent(storedEmail)}`))
           if (userRes.ok) {
             const userJson = await userRes.json()
             setCurrentUser(userJson.user)
@@ -92,7 +93,7 @@ export default function App() {
     try {
       setSubmitting(true)
       const endpoint = authMode === 'signup' ? '/api/auth/register' : '/api/auth/login'
-      const response = await fetch(endpoint, {
+      const response = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -205,7 +206,7 @@ export default function App() {
           </button>
 
           <div className="auth-footnote">
-            Data is stored in SQLite locally on your machine. Your country selection is saved with your account.
+            Your account is stored securely on our server. Your country selection is saved with your account.
           </div>
         </form>
       </div>

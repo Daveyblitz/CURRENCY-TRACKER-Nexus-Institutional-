@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { API_BASE } from '../config'
 
 /**
  * useFetch - Generic data fetching hook with:
@@ -17,7 +18,7 @@ export function useFetch(url, options = {}) {
 
   const fetchData = async () => {
     try {
-      const res = await fetch(url)
+      const res = await fetch(`${API_BASE}${url}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       setData(json)

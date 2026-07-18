@@ -1,123 +1,85 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const express = require('express')
+const cors = require('cors')
+const path = require('path')
+const fs = require('fs')
+require('dotenv').config({ path: path.join(__dirname, '../.env') })
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+const db = require('./db')
 
-// Enable CORS and JSON parsing
-app.use(cors());
-app.use(express.json());
+const app = express()
+const PORT = process.env.PORT || 5000
+const clientDistPath = path.join(__dirname, '../client/dist')
 
-// Initialize SQLite Database
-const dbPath = path.join(__dirname, 'database.sqlite');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to the SQLite database.');
-    initializeDatabase();
-  }
-});
+app.use(cors())
+app.use(express.json())
 
-// Expose database reference globally on app for router access
-app.set('db', db);
+// Expose the db handle to routes via req.app.get('db')
+app.set('db', db)
 
-function initializeDatabase() {
-  // Create users settings table
-  db.run(`
+async function initializeDatabase() {
+  await db.query(`
     CREATE TABLE IF NOT EXISTS user_settings (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      username TEXT DEFAULT 'Guest Developer',
-      country_code TEXT DEFAULT 'NG',
-      base_currency TEXT DEFAULT 'USD',
-      theme TEXT DEFAULT 'dark',
-      bitnob_api_key TEXT DEFAULT '',
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      id INTEGER PRIMARY KEY,
+      username TEXT NOT NULL DEFAULT 'Guest Developer',
+      country_code TEXT NOT NULL DEFAULT 'NG',
+      base_currency TEXT NOT NULL DEFAULT 'USD',
+      theme TEXT NOT NULL DEFAULT 'dark',
+      bitnob_api_key TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `, (err) => {
-    if (err) {
-      console.error('Error creating user_settings table:', err.message);
-    } else {
-      ensureUserSettingsColumns(() => {
-        // Seed default record if not present
-        db.run(`
-          INSERT OR IGNORE INTO user_settings (id, username, country_code, base_currency, theme, bitnob_api_key)
-          VALUES (1, 'Guest Developer', 'NG', 'USD', 'dark', '')
-        `, (seedErr) => {
-          if (seedErr) {
-            console.error('Error seeding default settings:', seedErr.message);
-          }
-        });
+  `)
 
-        db.run(`
-          CREATE TABLE IF NOT EXISTS users (
-            email TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            country_code TEXT NOT NULL DEFAULT 'NG',
-            password_salt TEXT NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-          )
-        `, (userTableErr) => {
-          if (userTableErr) {
-            console.error('Error creating users table:', userTableErr.message);
-          }
-        });
-      });
-    }
-  });
+  await db.query(`
+    INSERT INTO user_settings (id, username, country_code, base_currency, theme, bitnob_api_key)
+    VALUES (1, 'Guest Developer', 'NG', 'USD', 'dark', '')
+    ON CONFLICT (id) DO NOTHING
+  `)
 
-  // Example placeholder block: Open for historical logs table later
-  /*
-  db.run(`
-    CREATE TABLE IF NOT EXISTS rate_snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      currency_code TEXT,
-      rate REAL,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      email TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      country_code TEXT NOT NULL DEFAULT 'NG',
+      password_salt TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `);
-  */
+  `)
 }
 
-function ensureUserSettingsColumns(done) {
-  db.all("PRAGMA table_info(user_settings)", [], (err, rows) => {
-    if (err) {
-      console.error('Error checking user_settings schema:', err.message);
-      if (typeof done === 'function') done();
-      return;
-    }
+initializeDatabase()
+  .then(() => console.log('PostgreSQL schema ready.'))
+  .catch((err) => console.error('Failed to initialize PostgreSQL schema:', err.message))
 
-    const columnNames = (rows || []).map((r) => r.name);
-    if (columnNames.includes('country_code')) {
-      if (typeof done === 'function') done();
-      return;
-    }
+// Lightweight health check for uptime pings (keeps Render awake if desired)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
 
-    db.run("ALTER TABLE user_settings ADD COLUMN country_code TEXT DEFAULT 'NG'", (alterErr) => {
-      if (alterErr) {
-        console.error('Error adding country_code column:', alterErr.message);
-      }
-      if (typeof done === 'function') done();
-    });
-  });
+const apiRouter = require('./routes/api')
+app.use('/api', apiRouter)
+
+// If a client build happens to be present alongside the server, serve it too.
+// On Render (backend-only) this is simply skipped.
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath))
+
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next()
+    return res.sendFile(path.join(clientDistPath, 'index.html'))
+  })
 }
 
-// Attach Unified API Router
-const apiRouter = require('./routes/api');
-app.use('/api', apiRouter);
-
-// Root route - simple health / info response
 app.get('/', (req, res) => {
-  res.send('Nexus Financial Intelligence API — backend is running. Use /api for endpoints.');
-});
+  if (fs.existsSync(path.join(clientDistPath, 'index.html'))) {
+    return res.sendFile(path.join(clientDistPath, 'index.html'))
+  }
+  res.send('Nexus Financial Intelligence API — backend is running. Use /api for endpoints.')
+})
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`SQLite database path: ${dbPath}`);
-});
+// Bind to 0.0.0.0 so Render's health check can reach the process.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`)
+  console.log('PostgreSQL connection ready.')
+})
